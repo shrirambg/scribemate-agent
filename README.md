@@ -9,7 +9,7 @@ First, run the development server:
 ```bash
 eve dev
 ```
-
+##
 The development TUI opens an interactive session where you can send messages to your agent.
 
 Start by editing `agent/instructions.md` to define the agent's identity, purpose, tone, and response guidelines. Configure its model and runtime behavior in `agent/agent.ts`.
