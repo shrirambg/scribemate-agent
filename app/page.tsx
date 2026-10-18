@@ -1,5 +1,5 @@
-import { AuthenticatedAgentChat } from "./_components/authenticated-agent-chat";
+import { ScribeMateApp } from "./_components/scribemate-app";
 
 export default function Page() {
-  return <AuthenticatedAgentChat />;
+  return <ScribeMateApp />;
 }

@@ -20,8 +20,8 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "scribemate",
-  description: "A Next.js starter for eve agents with AI Elements.",
+  title: "ScribeMate | Voice-first examinations",
+  description: "A voice-first examination and proctoring workspace for candidates, examiners, and invigilators.",
 };
 
 // The page and Eve routes validate the generated app's Better Auth session.
