@@ -366,7 +366,6 @@ function CandidateDashboard({ candidate, exams, submissions, sessions, save, onO
   const [tab, setTab] = useState<DashboardTab>("Current");
   const [now, setNow] = useState(Date.now());
   const [voiceAsked, setVoiceAsked] = useState(false);
-  const examRef = useRef<Exam | null>(null);
   const userSession = sessions.find((session) => session.candidateRegNo === candidate.regNo);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 15000); return () => window.clearInterval(timer); }, []);
 
@@ -378,23 +377,39 @@ function CandidateDashboard({ candidate, exams, submissions, sessions, save, onO
 
   useEffect(() => {
     if (voiceAsked || !currentExam || !("speechSynthesis" in window)) return;
-    setVoiceAsked(true); examRef.current = currentExam;
-    speak(`Current exam: ${currentExam.title}. Would you like to open ${currentExam.title}? Please say Yes or No.`);
+    setVoiceAsked(true);
+    speak(`${currentExam.title}. Would you like to open ${currentExam.title}? Please say Yes or No.`);
     const Recognition = getRecognition();
     if (!Recognition) return;
-    const listener = new Recognition(); listener.lang = "en-US"; listener.onresult = (event) => {
+    const listener = new Recognition(); listener.lang = "en-US"; listener.continuous = true; listener.interimResults = false;
+    let awaitingExamDecision = true;
+    let pendingAction: InvigilatorAlert["type"] | "" = "";
+    listener.onresult = (event) => {
       const heard = event.results[event.resultIndex]?.[0]?.transcript.toLowerCase() ?? "";
-      if (/\b(yes|open exam)\b/.test(heard)) onOpen(currentExam.id);
-      else if (/\bno\b/.test(heard)) {
+      if (pendingAction) {
+        if (/\b(yes|yeah|confirm)\b/.test(heard)) {
+          const alert: InvigilatorAlert = { id: Date.now(), candidateName: candidate.name, candidateRegNo: candidate.regNo, type: pendingAction, status: "Pending", timestamp: new Date().toISOString() };
+          save(STORAGE_KEYS.alerts, [...readStored<InvigilatorAlert[]>(STORAGE_KEYS.alerts, []), alert]);
+          speak(`${pendingAction} request sent to your invigilator.`); pendingAction = "";
+        } else if (/\b(no|cancel)\b/.test(heard)) { speak("Request cancelled."); pendingAction = ""; }
+        return;
+      }
+      if (awaitingExamDecision && /\b(yes|open exam)\b/.test(heard)) { awaitingExamDecision = false; onOpen(currentExam.id); return; }
+      if (awaitingExamDecision && /\bno\b/.test(heard)) {
+        awaitingExamDecision = false;
         const wait = Math.max(0, Date.parse(currentExam.startTime) - Date.now());
         speak(`The exam starts in ${Math.max(1, Math.ceil(wait / 60000))} minutes.`);
         window.setTimeout(() => onOpen(currentExam.id), Math.max(0, wait - 5 * 60 * 1000));
+        return;
       }
-      listener.stop();
+      const request: Array<[RegExp, InvigilatorAlert["type"]]> = [[/\bwater\b/, "Water"], [/\brestroom|toilet\b/, "Restroom"], [/\bhelp\b/, "Help"], [/\bemergency\b/, "Emergency"]];
+      const match = request.find(([pattern]) => pattern.test(heard));
+      if (match) { pendingAction = match[1]; window.speechSynthesis.cancel(); speak(`Are you sure you want to request ${pendingAction}? Please say Yes or No.`); }
     };
+    listener.onend = () => { try { listener.start(); } catch { /* Browser can reject a rapid restart. */ } };
     try { listener.start(); } catch { /* Speech recognition may already be active in the browser. */ }
     return () => listener.stop();
-  }, [currentExam?.id, voiceAsked]);
+  }, [currentExam?.id]);
 
   function resumeSession() {
     if (!userSession) return;
@@ -412,7 +427,7 @@ function CandidateDashboard({ candidate, exams, submissions, sessions, save, onO
       const submission = submissions.find((item) => item.candidateRegNo === candidate.regNo && item.examId === exam.id);
       return <article className="exam-row" key={exam.id}><div className="exam-icon"><BookOpen size={20} /></div><div className="exam-main"><div className="exam-title-row"><h2>{exam.title}</h2>{phase === "ended" ? <span className="status-chip ended">Exam Ended / Evaluated</span> : phase === "active" ? <span className="status-chip live">In progress</span> : <span className="status-chip">Upcoming</span>}</div><p>{phase === "ended" ? `Ended ${formatDate(exam.endTime)}` : phase === "active" ? `Closes ${formatDate(exam.endTime)}` : `Starts ${formatDate(exam.startTime)}`}</p><div className="exam-facts"><span><Clock3 size={14} /> {exam.durationMinutes} min</span><span><FileCheck2 size={14} /> {exam.totalMarks} marks</span><span>{exam.questions.length} questions</span></div></div><div className="exam-action">{phase === "ended" ? submission?.status === "Approved" ? <button className="secondary-button" onClick={() => downloadReport(candidate, exam, submission)}>Download released report (PDF)</button> : <span className="quiet-note">{submission ? "Report pending review" : "No submission"}</span> : phase === "active" ? <button className="primary-button" onClick={() => onOpen(exam.id)}>{userSession?.examId === exam.id ? "Resume exam" : "Open exam"}<ChevronRight size={15} /></button> : <span className="quiet-note">Opens at scheduled time</span>}</div></article>;
     }) : <EmptyState title={tab === "Current" ? "No current exam" : tab === "Upcoming" ? "No upcoming exams" : "No completed exams"} detail={tab === "Current" ? "Your active or next scheduled paper will appear here." : "There are no exams in this list right now."} />}</div>
-    <div className="voice-hint"><Volume2 size={16} /><span>Hands-free entry is ready</span><button aria-label="Read current exam prompt" onClick={() => { setVoiceAsked(false); }}><Mic size={15} /> Read aloud</button></div>
+    <div className="voice-hint"><Volume2 size={16} /><span>Hands-free entry is ready</span><button aria-label="Read current exam prompt" onClick={() => { if (currentExam) speak(`${currentExam.title}. Would you like to open ${currentExam.title}? Please say Yes or No.`); }}><Mic size={15} /> Read aloud</button></div>
   </div>;
 }
 
